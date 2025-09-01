@@ -1,327 +1,178 @@
-import { createContext, useContext, useState, useEffect} from 'react';
-import toast from 'react-hot-toast';
-import PouchDB from 'pouchdb';
-const AuthContext = createContext();
+import { createContext, useContext, useEffect, useState } from "react";
+import axios from 'axios';
+import toast from "react-hot-toast";
+export const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  
-  let APP_BASE_URL='http://localhost:4000' //'http://localhost:4000'  //https://server-fms.onrender.com
-  let COUCH_DB_CONNECTION='http://root:secret@localhost:5984' //'http://root:secret@localhost:5984' //'http://admin:secret@13.40.24.65:3000'
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(() => localStorage.getItem('token'));
-  const [loading, setLoading] = useState(true);
-  const [auth, setAuth] = useState(false);
-  const [db, setDB] = useState({});
-  const [loadingLocalUser,setloadingLocalUser]=useState(null)
-  const [destroying,setDestroying]=useState(localStorage.getItem('destroying') ? true : false)
-  const [changingCompany,setChangingCompany]=useState(false)
-  if(!localStorage.getItem('dbs')) localStorage.setItem('dbs',JSON.stringify([]))
-  const [remoteDBs,setRemoteDBs]=useState([])
- 
-  async function  update_user_data_from_db(){
-    try {
-      let u=new PouchDB('user')
-      let {id}=await u.get('user')
-      db.user=new PouchDB('user-'+id)
-      db.user.createIndex({index: { fields: ['id'] }})
-      let user=await  db.user.find({selector: { id }})
-      user=user.docs[0]
+  const [isAuthenticated, setIsAuthenticated] = useState(undefined);
+  let env="pro" 
+  const [loading,setLoading]=useState(true)
+  const [isLoading,setIsLoading]=useState(false)
+  const DEV_SERVER_URL = 'http://18.170.141.120:8005';
+  const APP_BASE_URL = env == "pro" ? "https://isda-academy-server.derflash.com":  DEV_SERVER_URL
 
-      if(user){
-        setloadingLocalUser(true)
+  function takeToLogin(){
+      if(!window.location.href.includes('/login')){
+            window.location.href="/login"
+      }
+   }
+    const fetchUserData = async () => {
+
+      if(!localStorage.getItem('token')){
         setLoading(false)
-        setUser(user)
-        setToken(user.token_value)
-        setAuth(true)
-      }
-    } catch (error) {
-      console.log(error)
-      setloadingLocalUser(false)
-    }
-
-  }
-
-  
-  useEffect(()=>{
-     update_user_data_from_db()
-  },[])
-
-  useEffect(()=>{
-
-    if(!user) return
-
-    update_dbs()
-
-  },[user])
-
-
-
-  function register_db(name){
-     let dbs=JSON.parse(localStorage.getItem('dbs'))
-     localStorage.setItem('dbs',JSON.stringify([...dbs.filter(i=>i!=name),name]))
-  }
- 
-
-  function update_dbs(){
-
-      let db_names=[
-
-         {name:'managers',db_name:'managers-'+user.selected_company}, //+'-user-'+user.companies_details.filter(i=>i.id==user.selected_company)[0].admin_id},
-         {name:'bills_to_pay',db_name:'bills_to_pay-'+user.selected_company},
-         {name:'account_categories',db_name:'account_categories-'+user.selected_company},
-         {name:'bills_to_receive',db_name:'bills_to_receive-'+user.selected_company},
-         {name:'payment_methods',db_name:'payment_methods-'+user.selected_company},
-         {name:'transations',db_name:'transations-'+user.selected_company},
-         {name:'loans',db_name:'loans-'+user.selected_company},
-         {name:'investors',db_name:'investors-'+user.selected_company},
-         {name:'suppliers',db_name:'suppliers-'+user.selected_company},
-         {name:'investments',db_name:'investments-'+user.selected_company},
-         {name:'settings',db_name:'settings-'+user.id+'-'+user.selected_company},
-         {name:'clients',db_name:'clients-'+user.selected_company},
-
-      ]
-
-
-      let temp_dbs=['__user-'+user.id]
-
-      console.log({c:user.companies,s:user.selected_company})
-
-      temp_dbs=[...temp_dbs,...user.companies.filter(i=>i!=user.selected_company).map(i=>'__managers-'+i)]
-
-      setRemoteDBs([...db_names.map(i=>i.db_name),...temp_dbs])
-
-      let _db={}
-
-      
-
-
-      db_names.forEach(i=>{
-         _db[i.name]=new PouchDB(i.db_name)
-         register_db(i.db_name)
-      })
-      setDB(_db)    
-  }
-
-
-   async function _change_company(company_id,_user){
-    if(user){
-      let user_db=new PouchDB('user-'+user.id)
-      let _user=await  user_db.find({selector: { id:user.id }})
-      _user=_user.docs[0]
-      await user_db.put({..._user,selected_company:company_id})
-    }else{
-      update_user(_user)
-    }
-    setChangingCompany(true)
-    setTimeout(()=>window.location.href="/",500)
-  }
-
-
-const login =  async (userData, authToken) => {
-      if(localStorage.getItem('token')) localStorage.setItem('token', authToken);
-      setToken(authToken);
-      delete userData.__v
-      _change_company(userData.selected_company,userData)
-}
-
-
-
-
-
-async function update_user(userData){
-
-  delete userData.__v
-
-  try{
-
-        let u=new PouchDB('user')
-        
-        let docs=await u.allDocs({ include_docs: true })
-        let user=docs.rows.map(i=>i.doc)[0]
-
-        if(user){
-           u.put({id:user.id,_rev:user._rev,_id:user._id})
-        }else{
-           u.put({_id:'user',id:userData.id})
-        }
-
-        let user_db=new PouchDB('user-'+userData.id)
-        user_db.createIndex({index: { fields: ['id'] }})
-        let _user=await user_db.find({selector: { id:userData.id }})
-        _user=_user.docs[0]
-
-        if(_user){
-           user_db.put({...userData,_rev:_user._rev})
-           //setUser({...userData,_rev:_user._rev})
-        }else{
-           user_db.put(userData)
-        }
-
         return
-
-
-  }catch(e){
-     console.log(e)
-     return
-  }
-   
-  return
-}
-
-  
-
-
-  async function deleteAllDocuments(db) {
-    try {
-      const allDocs = await db.allDocs({ include_docs: true });
-      const docsToDelete = allDocs.rows.map(row => ({
-        ...row.doc,
-        _deleted: true
-      }));
-      const result = await db.bulkDocs(docsToDelete);
-      console.log('All documents deleted successfully', result);
-      return {ok:true}
-    } catch (err) {
-      console.error('Error deleting all documents', err);
-      return {error:err}
-    }
-  }
-
-
-
-
-  async function deleteDocuments(docIds) {
-    try {
-      const { rows } = await db.allDocs({ include_docs: true, keys: docIds });
-      const docsToDelete = rows
-        .filter(row => row.doc)  // Filter out rows without documents
-        .map(row => ({ ...row.doc, _deleted: true })); // Mark documents for deletion
-  
-      const result = await db.bulkDocs(docsToDelete);
-      console.log('Documents deleted successfully', result);
-    } catch (err) {
-      console.error('Error retrieving or deleting documents', err);
-    }
-  }
-
-
-  async function reset(){
-      let db_names=Object.keys(db).filter(i=>i!="categories")
-
-      try{
-        for (let i = 0; i < db_names.length; i++) {
-          await deleteAllDocuments(db[db_names[i]])
-        }
-
-    
-        setTimeout(()=>{
-          localStorage.removeItem('destroying')
-          localStorage.removeItem('token');
-          setDestroying(false)
-          setUser(null);
-          setToken(null);
-          //window.location.href="/login";
-        },200)
-    }catch(e){
-        return {ok:false,error:e}
-    }
-
-  }
-
-  useEffect(()=>{
-           if(destroying) {
-                reset()
-           }
-  },[destroying])
-
-
-  const logout =async () => {
-
-    localStorage.setItem('destroying',true)
-    setDestroying(true)
-    await reset()
-
-  };
-
-  const isAuthenticated = () => {
-    return !!token;
-  };
-
-  async function _add(from,array){
-    try{
-     
-      for (let i = 0; i < array.length; i++) {
-        let d={index_position:i+1,...array[i]}
-        delete d.__v
-        await db[from].put(d)
       }
-      
-      return {ok:true}
 
-    }catch(e){
-      return {ok:false,error:e}
-    } 
-
-  }
-
-
+      try {
+        let response=await makeRequest({method:'get', url:`api/user`, error: ``,withToken:true},0);
+        setUser(response)
+        setIsAuthenticated(true)
+        setLoading(false)
+        return true
+      } catch (error) {
+        console.log({error})
+        console.error('Error fetching user data:', error);
+        setIsAuthenticated(false)
+        setUser(null)
+        setLoading(false)
+        return false
+      } 
+    };
 
     useEffect(() => {
+      fetchUserData()
+    }, []);
 
-    //logout()
-     
-      const fetchUserData = async () => {
 
+    const logout=async () => {
+
+      try {
+        await localStorage.removeItem('token')
+        return { success: true };
+      } catch (e) {
+        let msg = e.message;
+        console.log({msg})
+        return { success: false, msg };
+      }
+
+    };
+
+
+    const refreshToken = async (retries) => {
+
+      if(!user) return
+
+      let attempt = 0;
+      while (retries === undefined || retries > 0) {
         try {
-          const response = await fetch(`${APP_BASE_URL}/api/me`, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          });
-
-          if (response.ok) {
-            const userData = await response.json();
-            login(userData, localStorage.getItem('token'));
-            setAuth(true) 
-          } else {
-
-            if(response.status=="401"){
-                  toast.remove()
-                  toast.error('Sessão expirou!')
-            }
-
-            if(loadingLocalUser==false)  logout()
-
+        
+          const response = await axios.post(
+            APP_BASE_URL + "/api/refresh-token",
+            {refreshToken: localStorage.getItem('refresh-token') }
+          );
+          if (response.status === 200) {
+            localStorage.setItem('token',response.data.accessToken)
+            return true
           }
-        } catch (error) {
-             console.error('Error fetching user data:', error);
-             if(loadingLocalUser==false) logout()
-        } finally {
-          setLoading(false);
+         
+        } catch (e) {
+          if(e.response?.status==400){
+            return false
+          }
+          console.error("Request failed:", e.message);
         }
-      };
-
-      if(loadingLocalUser==null || loadingLocalUser==true) {
-        return
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        attempt++;
+        if (retries !== undefined) retries--;
       }
+      throw new Error("Request failed after maximum retries.");
+    };
 
-      if (isAuthenticated && !user && loading && token) {
-        fetchUserData();
-      } else {
-        setLoading(false);
-      }
+
+
+     async function makeRequest(options={data:{},method:'get',withToken:false},maxRetries = 6, retryDelay = 3000,previous_url) {
       
+      let postData=options.data ? options.data : {}
+     
+      try {
+       let response 
+       let headers={
+        'Content-Type': 'application/json',
+       }
 
-     }, [isAuthenticated, user, token,loadingLocalUser]);
+       if(options.withToken){
+        const storedToken = await localStorage.getItem('token');
+         headers['Authorization']=`Bearer ${storedToken}`
+         if(!storedToken){
+             setIsAuthenticated(false)
+         }
+       }
 
-   
-   
+       if (options.method.toLowerCase() === 'get' && Object.keys(options.params || {}).length > 0) {
+        const queryString = new URLSearchParams(options.params || {}).toString();
+        options.url = `${options.url}?${queryString}`;
+      } 
 
-  return (
-    <AuthContext.Provider value={{ update_user_data_from_db,changingCompany,remoteDBs,setRemoteDBs,_change_company,db,APP_BASE_URL,COUCH_DB_CONNECTION,user,update_user,setDestroying,destroying,login, logout, isAuthenticated , loading, setUser, setLoading, token,auth}}>
-      {children}
-    </AuthContext.Provider>
-  );
+      if(previous_url){
+         options.url=previous_url
+      }
+  
+       if(options.method=="post") {
+            response = await axios.post(`${APP_BASE_URL}/`+options.url,postData,{headers}); 
+       }else if(options.method=="delete"){
+            response = await axios.delete(`${APP_BASE_URL}/`+options.url,{headers});
+       }else{
+            response = await axios.get(`${APP_BASE_URL}/`+options.url,{headers});
+       }
+      
+       return response.data;
+  
+      } catch (error) {
+        
+        console.error('Error fetching data:', error);
+
+        if(error?.response?.status==403 && error?.response?.data?.access==false){
+                toast.error('Accesso restrito')
+                setLoading(true)
+                setTimeout(()=>{
+                  window.location.href="/"
+                },2000)
+        }
+
+        let tokenJustUpdated=false
+       
+        if(error?.response?.status==403 && error?.response?.data?.invalid_token==true && localStorage.getItem('token')){
+          if(await refreshToken() && localStorage.getItem('refresh-token')){
+            tokenJustUpdated=true
+          }else{
+              toast.error('Sessão expirou!')
+              localStorage.removeItem('token')
+              setLoading(true)
+              setTimeout(()=>{
+                takeToLogin()
+              },2000)
+          }
+        }
+
+        if (maxRetries > 0 || tokenJustUpdated) {
+              await new Promise(resolve => setTimeout(resolve, retryDelay)); 
+              return makeRequest(options, maxRetries - 1, retryDelay,options.url); 
+        } else {
+              throw error; 
+        } 
+      }
+  }
+  
+
+    return (
+      <AuthContext.Provider value={{isLoading,setIsLoading,APP_BASE_URL,setUser,user,fetchUserData, makeRequest,isAuthenticated, setIsAuthenticated,logout,makeRequest,loading}}>
+          {children}
+      </AuthContext.Provider>
+    )
+
 };
 
 export const useAuth = () => useContext(AuthContext);
+
+
